@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог товаров</title>
+    <style>
+        body { font-family: cursive, sans-serif; margin: 20px; background: #58a2a1; }
+        .container { max-width: 800px; margin: auto; background: rgb(255, 255, 255); padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+        h1 { text-align: center;}
+        h4 {text-align: end; font-style: italic;}
+        .product-card { border: 1px solid #48fff0; padding: 10px; margin: 10px 0; background: rgb(178, 251, 255); }
+        .filter-section { margin: 20px 0; padding: 10px; background: #dbf5f5; border-radius: 5px; }
+        select { padding: 5px; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h4>Батов Даниил ЭФБО-10-23</h4>
+    <h1>Добро пожаловать в AllPlay</h1>
+    <h2>Каталог товаров</h2>
+    <div class="filter-section">
+        <label for="categoryFilter">Фильтр по категории:</label>
+        <select id="categoryFilter" onchange="filterProducts()">
+            <option value="all">Все категории</option>
+        </select>
+    </div>
+    <div id="products"></div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8080/products";
+    let productsData = [];
+
+    async function loadProducts() {
+        try {
+            const response = await fetch(API_URL);
+            if (!response.ok) throw new Error("Ошибка загрузки данных");
+
+            productsData = await response.json();
+            populateCategories(productsData);
+            renderProducts(productsData);
+        } catch (error) {
+            console.error("Ошибка:", error);
+        }
+    }
+
+    function populateCategories(products) {
+        const categoryFilter = document.getElementById('categoryFilter');
+        const categories = new Set();
+        
+
+        products.forEach(product => {
+            product.categories.forEach(category => categories.add(category));
+        });
+
+
+        categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = category;
+            categoryFilter.appendChild(option);
+        });
+    }
+
+    function filterProducts() {
+        const selectedCategory = document.getElementById('categoryFilter').value;
+        const filtered = selectedCategory === 'all' 
+            ? productsData 
+            : productsData.filter(product => 
+                product.categories.includes(selectedCategory)
+            );
+        renderProducts(filtered);
+    }
+
+    function renderProducts(products) {
+        const container = document.getElementById("products");
+        container.innerHTML = "";
+
+        products.forEach(product => {
+            const item = document.createElement("div");
+            item.classList.add("product-card");
+            item.innerHTML = `
+                <h2>${product.name}</h2>
+                <p>${product.description}</p>
+                <p>Цена: ${product.price} ₽</p>
+                <p>Категории: ${product.categories.join(', ')}</p>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    loadProducts();
+</script>
+
+</body>
+</html>
