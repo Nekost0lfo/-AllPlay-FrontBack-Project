@@ -19,6 +19,8 @@
         th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
         th { background: #f8f9fa; }
         .actions { display: flex; gap: 10px; }
+        #chatArea {margin-top: 30px;}
+        #messages {border: 1px solid #ccc;min-height: 120px;padding: 10px;margin-bottom: 10px;}
     </style>
 </head>
 <body>
@@ -51,111 +53,146 @@
         </thead>
         <tbody id="productList"></tbody>
     </table>
+    <div id="chatArea">
+        <h2>Чат с покупателями (WebSocket)</h2>
+        <div id="messages"></div>
+        <input id="chatInput" type="text" placeholder="Сообщение..." />
+        <button id="sendBtn">Отправить</button>
+    </div>
 </div>
-
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-    async function deleteProduct(id) {
-        if (!confirm(`Вы уверены, что хотите удалить товар с ID ${id}?`)) return;
+    const REST_URL = "http://localhost:8080/products";
+    const SOCKET_URL = "http://localhost:3000";
 
+    async function loadProducts() {
         try {
-            const response = await fetch(`http://localhost:8080/products/${id}`, {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" }
-            });
+          const response = await fetch(REST_URL);
+          if (!response.ok) throw new Error("Ошибка загрузки товаров");
 
-            if (!response.ok) {
-                const errorMessage = await response.json();
-                throw new Error(errorMessage.error || "Ошибка удаления товара");
-            }
+          const products = await response.json();
+          const productList = document.getElementById("productList");
+          if (!productList) throw new Error("Элемент productList не найден");
 
-            console.log(`Товар с ID ${id} удалён`);
-            await loadProducts();
+          productList.innerHTML = "";
+          products.forEach((product) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+          <td>${product.id}</td>
+          <td>${product.name}</td>
+          <td>${product.price} ₽</td>
+          <td>${product.description}</td>
+          <td>${product.categories.join(", ")}</td>
+          <td class="actions">
+            <button class="btn-primary" onclick="editProduct(${product.id}, '${
+              product.name
+            }', ${product.price}, '${
+              product.description
+            }', '${product.categories.join(", ")}')">
+              Редактировать
+            </button>
+            <button class="btn-danger" onclick="deleteProduct(${
+              product.id
+            })">Удалить</button>
+          </td>
+        `;
+            productList.appendChild(row);
+          });
         } catch (error) {
-            console.error("Ошибка удаления товара:", error);
-            alert("Ошибка удаления товара: " + error.message);
+          console.error("Ошибка загрузки товаров:", error);
         }
-    }
+      }
 
-    function editProduct(id, name, price, description, categories) {
+      async function deleteProduct(id) {
+        if (!confirm(`Вы уверены, что хотите удалить товар с ID ${id}?`))
+          return;
+        try {
+          const response = await fetch(`${REST_URL}/${id}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+          });
+          if (!response.ok) {
+            const errMsg = await response.json();
+            throw new Error(errMsg.error || "Ошибка удаления");
+          }
+          console.log(`Товар с ID ${id} удалён`);
+          await loadProducts();
+        } catch (error) {
+          console.error("Ошибка удаления товара:", error);
+          alert("Ошибка удаления товара: " + error.message);
+        }
+      }
+
+      function editProduct(id, name, price, description, categories) {
         document.getElementById("productId").value = id;
         document.getElementById("name").value = name;
         document.getElementById("price").value = price;
         document.getElementById("description").value = description;
         document.getElementById("categories").value = categories;
-    }
+      }
 
-    async function loadProducts() {
-        const API_URL = "http://localhost:8080/products";
-        try {
-            const response = await fetch(API_URL);
-            if (!response.ok) throw new Error("Ошибка загрузки данных");
-
-            const products = await response.json();
-            const productList = document.getElementById("productList");
-            if (!productList) throw new Error("Элемент productList не найден");
-
-            productList.innerHTML = "";
-            products.forEach(product => {
-                const row = document.createElement("tr");
-                row.innerHTML = `
-                    <td>${product.id}</td>
-                    <td>${product.name}</td>
-                    <td>${product.price} ₽</td>
-                    <td>${product.description}</td>
-                    <td>${product.categories.join(', ')}</td>
-                    <td class="actions">
-                        <button class="btn-primary" onclick="editProduct(${product.id}, '${product.name}', ${product.price}, '${product.description}', '${product.categories.join(', ')}')">
-                            Редактировать
-                        </button>
-                        <button class="btn-danger" onclick="deleteProduct(${product.id})">Удалить</button>
-                    </td>
-                `;
-                productList.appendChild(row);
-            });
-        } catch (error) {
-            console.error("Ошибка загрузки товаров:", error);
-        }
-    }
-
-    async function addProduct(event) {
+      async function addProduct(event) {
         event.preventDefault();
-        const API_URL = "http://localhost:8080/products";
-
         const productIdEl = document.getElementById("productId");
-        const name = document.getElementById("name").value;
-        const price = document.getElementById("price").value;
-        const description = document.getElementById("description").value;
-        const categoriesStr = document.getElementById("categories").value;
-        const categories = categoriesStr.split(",").map(cat => cat.trim());
+        const name = document.getElementById("name").value.trim();
+        const price = parseFloat(document.getElementById("price").value);
+        const description = document.getElementById("description").value.trim();
+        const categoriesStr = document
+          .getElementById("categories")
+          .value.trim();
+        const categories = categoriesStr.split(",").map((c) => c.trim());
 
         const idValue = productIdEl.value.trim();
+
         if (!idValue) {
-            const newProduct = { name, price, description, categories };
+          const newProduct = { name, price, description, categories };
+          try {
+            const response = await fetch(REST_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(newProduct),
+            });
+            if (!response.ok) throw new Error("Ошибка добавления товара");
 
-            try {
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(newProduct)
-                });
-
-                if (!response.ok) throw new Error("Ошибка добавления товара");
-
-                console.log("Товар успешно добавлен:", newProduct);
-                document.getElementById("productForm").reset();
-                await loadProducts();
-            } catch (error) {
-                console.error("Ошибка добавления товара:", error);
-                alert("Ошибка добавления товара: " + error.message);
-            }
+            console.log("Товар успешно добавлен:", newProduct);
+            document.getElementById("productForm").reset();
+            await loadProducts();
+          } catch (error) {
+            console.error("Ошибка добавления товара:", error);
+            alert("Ошибка добавления товара: " + error.message);
+          }
+        } else {
+          alert("Редактирование пока не реализовано!");
         }
-    }
+      }
 
-    document.addEventListener("DOMContentLoaded", function () {
-        document.getElementById("productForm").addEventListener("submit", addProduct);
+      const socket = io(SOCKET_URL); 
+
+      socket.on("connect", () => {
+        console.log("Админ подключился к чату:", socket.id);
+      });
+
+      socket.on("chatMessage", (msg) => {
+        const div = document.getElementById("messages");
+        const p = document.createElement("p");
+        p.textContent = `${msg.role}: ${msg.text}`;
+        div.appendChild(p);
+      });
+
+      document.getElementById("sendBtn").addEventListener("click", () => {
+        const input = document.getElementById("chatInput");
+        const text = input.value.trim();
+        if (!text) return;
+        socket.emit("chatMessage", { text, role: "admin" });
+        input.value = "";
+      });
+
+      document.addEventListener("DOMContentLoaded", () => {
+        document
+          .getElementById("productForm")
+          .addEventListener("submit", addProduct);
         loadProducts();
-    });
-</script>
-
-</body>
+      });
+    </script>
+  </body>
 </html>
